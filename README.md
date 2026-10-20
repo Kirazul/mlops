@@ -39,3 +39,7 @@ mlflow ui
 Then open http://127.0.0.1:5000 and select the `churn-prediction` experiment.
 `mlruns/` and `mlflow.db` stay local and are ignored by Git; the scripts can be
 re-run at any time to reproduce the runs.
+
+## MLflow interface
+
+![MLflow interface](interface.png)

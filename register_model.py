@@ -1,10 +1,15 @@
 
 # ===== 1. Importer les bibliothèques =====
+import os
+
 import mlflow
 from mlflow import MlflowClient
 
 # ===== 2. Se connecter à la base MLflow =====
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+# En local : sqlite:///mlflow.db ; avec Compose : http://localhost:5000
+mlflow.set_tracking_uri(
+    os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+)
 client = MlflowClient()
 
 # ===== 3. Retrouver l'expérience =====

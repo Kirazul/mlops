@@ -1,5 +1,6 @@
 
 # ===== 1. Importer les bibliothèques =====
+import os
 from typing import Literal
 
 import mlflow
@@ -9,15 +10,17 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-# ===== 2. Créer l'application =====
+# ===== 2. Configuration (surchargée par Docker / Docker Compose) =====
+TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+MODEL_URI = os.getenv("MODEL_URI", "model")
+
+# ===== 3. Créer l'application =====
 app = FastAPI(title="API Churn")
 
-# ===== 3. Charger le modèle champion une seule fois =====
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+# ===== 4. Charger le modèle une seule fois au démarrage =====
+mlflow.set_tracking_uri(TRACKING_URI)
 
-model = mlflow.sklearn.load_model(
-    "models:/churn-model@champion"
-)
+model = mlflow.sklearn.load_model(MODEL_URI)
 
 # Récupérer les colonnes attendues par le modèle
 features = list(model.feature_names_in_)

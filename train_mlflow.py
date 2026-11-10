@@ -1,4 +1,6 @@
 # ===== 1. Importer les bibliothèques =====
+import os
+
 import pandas as pd
 import mlflow
 import mlflow.sklearn
@@ -90,6 +92,10 @@ def lancer_essai(nom, n_estimators, max_depth, colonnes):
 
 
 # ===== 5. Programme principal =====
+# En local : sqlite:///mlflow.db ; avec Compose : http://localhost:5000
+mlflow.set_tracking_uri(
+    os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+)
 mlflow.set_experiment("churn-prediction")
 
 TOUT = [

@@ -1,45 +1,71 @@
-# MLOps - Churn Prediction
+# TP1 MLOps – Prédiction du churn client
 
-**Author:** Mohamed Aziz Mansour
+Modèle de classification qui prédit si un client va résilier son abonnement (churn), entraîné sur un jeu de données synthétique.
 
-A small MLOps project for customer churn prediction. It generates a synthetic
-customer dataset, trains and evaluates a first classification model, and saves
-the trained model for later use.
+## Contenu du dépôt
 
-## Contents
+| Fichier | Rôle |
+|---|---|
+| `generate_data.py` | Génère 500 clients fictifs et les enregistre dans `churn_data.csv` |
+| `churn_data.csv` | Jeu de données généré |
+| `churn_model.ipynb` | Exploration des données, entraînement et évaluation du modèle |
+| `model.pkl` | Modèle entraîné, sauvegardé avec `joblib` |
 
-- `generate_data.py` - generates the synthetic churn dataset.
-- `churn_data.csv` - generated customer data.
-- `churn_model.ipynb` - notebook used to train and evaluate the first model.
-- `model.pkl` - saved trained model.
-- `train_mlflow.py` - trains three churn models and logs them as MLflow runs.
-- `lire_runs.py` - reads the MLflow runs and ranks them by F1 score.
-- `charger_modele.py` - reloads the best model from a run and makes a prediction.
-- `train_autolog.py` - bonus: logs a run automatically with MLflow autolog.
+## Données
 
-## MLflow experiment tracking
+Chaque client est décrit par :
 
-This branch adds experiment tracking with MLflow 3.17.1. All runs are grouped in
-the `churn-prediction` experiment.
+- `age` : 18 à 69 ans
+- `salaire` : 1200 à 7999
+- `abonnement` : Basique, Standard ou Premium
+- `anciennete` : 0 à 14 ans
+- `consommation` : 0 à 99
+- `churn` (cible) : 1 si `consommation < 30` et `anciennete < 2`, sinon 0
 
-- Runs: `essai-1`, `essai-2`, `essai-3`, plus `essai-auto` from autolog.
-- Logged per run: parameters (`n_estimators`, `max_depth`, `features`), metrics
-  (accuracy, precision, recall, f1), and the trained model.
-- Results on the test set: `essai-1` and `essai-3` reach an F1 of 0.889, while
-  `essai-2` reaches 0.333.
+La graine aléatoire est fixée (`np.random.seed(42)`), donc les données sont reproductibles.
 
-Run the experiments and open the MLflow UI (activate the virtual environment
-first):
+## Modèle
+
+`RandomForestClassifier` de scikit-learn, avec un découpage train/test 80/20 (`random_state=42`).
+
+| Essai | Paramètres | Features | Accuracy |
+|---|---|---|---|
+| 1 | 100 arbres, `max_depth=5` | 5 | 0.99 |
+| 2 | 50 arbres, `max_depth=3` | 5 | 0.99 |
+| 3 | 100 arbres, `max_depth=5` | 4 (sans `salaire`) | 1.00 |
+
+Chaque essai écrase `model.pkl` : le fichier actuel correspond à l'**essai 3** et attend 4 features (`age`, `abonnement`, `anciennete`, `consommation`).
+
+> Le jeu de test ne contient que 5 clients en churn sur 100 : l'accuracy est donc peu représentative.
+
+## Installation
 
 ```powershell
-python train_mlflow.py
-mlflow ui
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install pandas numpy scikit-learn joblib jupyter
 ```
 
-Then open http://127.0.0.1:5000 and select the `churn-prediction` experiment.
-`mlruns/` and `mlflow.db` stay local and are ignored by Git; the scripts can be
-re-run at any time to reproduce the runs.
+## Utilisation
 
-## MLflow interface
+```powershell
+python generate_data.py    # génère churn_data.csv
+jupyter notebook churn_model.ipynb
+```
 
-![MLflow interface](interface.png)
+Charger le modèle :
+
+```python
+import joblib
+import pandas as pd
+
+model = joblib.load("model.pkl")
+client = pd.DataFrame([{"age": 30, "abonnement": 0, "anciennete": 1, "consommation": 10}])
+print(model.predict(client))  # abonnement : 0 = Basique, 1 = Standard, 2 = Premium
+```
+
+## Branches
+
+- `master` : version stable
+- `develop` : intégration
+- `feature/*` : développement des nouvelles fonctionnalités

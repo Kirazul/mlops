@@ -1,96 +1,51 @@
 # ===== 1. Importer les bibliothèques =====
-import os
-from typing import Literal
-
-import mlflow
+import os                             # lire les variables d'environnement
+from typing import Literal            # pour limiter les valeurs possibles d'un champ
+import mlflow                         # charger le modèle (Registry ou dossier)
 import mlflow.sklearn
-import pandas as pd
+import pandas as pd                   # fabriquer le tableau attendu par le modèle
+from fastapi import FastAPI           # le cadre de travail de l'API
+from pydantic import BaseModel        # décrire et valider les données reçues
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+# ===== 2. Créer l'application =====
+app = FastAPI(title="API Churn")      # le titre s'affiche dans la page /docs
 
-# ===== 2. Configuration (surchargée par Docker / Docker Compose) =====
+# ===== 3. Lire la configuration dans les variables d'environnement =====
+# Rien n'est écrit « en dur » : le même code marche sur le poste, dans un
+# conteneur seul, ou dans Docker Compose. Seules les variables changent.
+# os.getenv("NOM", "valeur") : valeur de la variable, ou valeur par défaut si elle n'existe pas
 TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
-MODEL_URI = os.getenv("MODEL_URI", "model")
+MODEL_URI = os.getenv("MODEL_URI", "models:/churn-model@champion")
 
-# ===== 3. Créer l'application =====
-app = FastAPI(title="API Churn", version="1.0.0")
-
-# ===== 4. Charger le modèle une seule fois au démarrage =====
+# ===== 4. Charger le champion UNE SEULE FOIS, au démarrage =====
+# MODEL_URI peut être une adresse du Registry (models:/...) ou un simple dossier (model)
 mlflow.set_tracking_uri(TRACKING_URI)
+model = mlflow.sklearn.load_model(MODEL_URI)
+print(f"Modèle chargé depuis : {MODEL_URI}")
 
-try:
-    model = mlflow.sklearn.load_model(MODEL_URI)
-except Exception as exc:
-    raise RuntimeError(
-        f"Impossible de charger le modèle depuis '{MODEL_URI}'. "
-        "Vérifiez MLFLOW_TRACKING_URI et MODEL_URI."
-    ) from exc
-
-# Récupérer les colonnes attendues par le modèle
-if not hasattr(model, "feature_names_in_"):
-    raise RuntimeError(
-        "Le modèle chargé n'expose pas feature_names_in_ : "
-        "il doit être entraîné avec un DataFrame nommé."
-    )
-
-features = list(model.feature_names_in_)
-print(f"Modèle chargé depuis {MODEL_URI} ({len(features)} variables)")
-
-# ===== 5. Décrire les données reçues =====
+# ===== 5. Décrire les données attendues (validées automatiquement) =====
 class Client(BaseModel):
-    age: int = Field(ge=0)
-    salaire: float = Field(ge=0)
-    abonnement: Literal["Basique", "Standard", "Premium"]
-    anciennete: float = Field(ge=0)
-    consommation: float = Field(ge=0)
+    age: int                                                # nombre entier
+    salaire: float                                          # nombre décimal
+    abonnement: Literal["Basique", "Standard", "Premium"]   # 3 valeurs possibles
+    anciennete: float
+    consommation: float
 
-
-# ===== 6. Routes de vérification =====
-@app.get("/")
-def root():
-    return {"service": "churn-api", "model": MODEL_URI, "docs": "/docs"}
-
-
+# ===== 6. Route /health : vérifier que l'API est en vie =====
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
-# ===== 7. Route de prédiction =====
+# ===== 7. Route /predict : recevoir un client, renvoyer la prédiction =====
 @app.post("/predict")
 def predict(client: Client):
-    # a) Convertir les données en DataFrame
+    # a) transformer le client reçu en tableau d'une ligne
     ligne = pd.DataFrame([client.model_dump()])
-
-    # b) Transformer abonnement en colonnes indicatrices
-    ligne = pd.get_dummies(
-        ligne,
-        columns=["abonnement"],
-        dtype=int
-    )
-
-    # c) Aligner les colonnes sur celles du modèle
-    ligne = ligne.reindex(
-        columns=features,
-        fill_value=0
-    )
-
-    # d) Effectuer la prédiction
-    try:
-        resultat = int(model.predict(ligne)[0])
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur pendant la prédiction : {str(e)}"
-        )
-
-    # e) Retourner le résultat au format JSON
-    return {
-        "churn": resultat,
-        "message": (
-            "Le client va partir"
-            if resultat == 1
-            else "Le client reste"
-        )
-    }
+    # b) transformer le texte « abonnement » en colonnes 0/1, comme à l'entraînement
+    ligne = pd.get_dummies(ligne)
+    # c) garder les colonnes du modèle, dans le bon ordre ; les absentes valent 0
+    ligne = ligne.reindex(columns=model.feature_names_in_, fill_value=0)
+    # d) prédire : 1 = part, 0 = reste
+    resultat = int(model.predict(ligne)[0])
+    return {"churn": resultat,
+            "message": "Le client va partir" if resultat == 1 else "Le client reste"}

@@ -25,11 +25,12 @@ Projet MLOps du cours : modèle de classification qui prédit si un client va r�
 | `deplacer_alias.py` | Déplace / restaure l'alias `champion` |
 | `app.py` | API FastAPI (`/health`, `/predict`) |
 | `test_api.py` | Tests de l'API (Health, prédictions, validation) |
-| `export_champion.py` | Exporte le champion dans `model/` pour l'image Docker |
+| `enregistrer_modele.py` | Entraîne et enregistre le champion dans le registre (idempotent) |
+| `exporter_modele.py` | Exporte le champion dans `model/` pour l'image seule |
 | `Dockerfile` | Image de l'API churn |
 | `.dockerignore` | Fichiers exclus de l'image |
 | `requirements.txt` | Dépendances épinglées de l'image |
-| `docker-compose.yml` | Stack MLflow + API |
+| `docker-compose.yml` | Stack MLflow + initialisation + API |
 
 ## TP1 – Données et modèle
 
@@ -71,10 +72,15 @@ L'API lit `MLFLOW_TRACKING_URI` (défaut `sqlite:///mlflow.db`) et `MODEL_URI` (
 
 ### Image seule
 
+L'image ne contient pas le modèle : on le monte depuis `model/` (ou on pointe vers un registre accessible).
+
 ```powershell
-python export_champion.py                  # exporte le champion dans model/
+python exporter_modele.py                  # exporte le champion dans model/
 docker build -t churn-api:1.0 .
-docker run -d -p 8000:8000 --name api churn-api:1.0
+docker run -d -p 8000:8000 --name api `
+  -e MODEL_URI=model `
+  -v "${PWD}/model:/app/model:ro" `
+  churn-api:1.0
 curl.exe http://localhost:8000/health
 python test_api.py
 docker logs api
@@ -84,25 +90,25 @@ docker rm api
 
 ### Docker Compose (MLflow + API)
 
-Au premier lancement, le registre MLflow est vide : on l'alimente avant de démarrer l'API.
+`docker compose up` lance trois services : `mlflow`, `trainer` (entraîne et enregistre le champion s'il n'existe pas) puis `api`.
 
 ```powershell
-docker compose up -d mlflow
-curl.exe http://localhost:5000/health
-
-$env:MLFLOW_TRACKING_URI="http://localhost:5000"
-$env:PYTHONUTF8="1"
-python train_mlflow.py
-python register_model.py
-Remove-Item Env:MLFLOW_TRACKING_URI
-Remove-Item Env:PYTHONUTF8
-
 docker compose up -d --build
 docker compose ps
 curl.exe http://localhost:8000/health
 python test_api.py
 docker compose logs -f api
 ```
+
+Forcer un nouvel entraînement (nouvelle version du champion) :
+
+```powershell
+$env:FORCE_RETRAIN="1"
+docker compose up --build
+Remove-Item Env:FORCE_RETRAIN
+```
+
+Le `trainer` est idempotent : si l'alias `champion` existe déjà, il s'arrête immédiatement sans réentraîner.
 
 Arrêt :
 
@@ -119,8 +125,12 @@ Navigateur / test_api.py
         |  :8000
         v
       api  ──(http://mlflow:5000)──>  mlflow  ──> volume mlflow-data
- (modèle champion)                 (registre + artefacts)
+ (modèle champion)      ^            (registre + artefacts)
+                        |
+                    trainer (premier lancement)
 ```
+
+Les fichiers locaux `mlflow.db`, `mlruns/` et `model/` sont ignorés par Git : le registre de Compose vit dans le volume `mlflow-data` et se recrée tout seul.
 
 ## Branches
 

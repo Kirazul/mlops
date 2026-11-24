@@ -1,9 +1,13 @@
 
+import os
+
 import mlflow
 from mlflow import MlflowClient
 
 # ===== 1. Connexion à MLflow =====
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+mlflow.set_tracking_uri(
+    os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+)
 client = MlflowClient()
 
 # ===== 2. Retrouver le run "essai-2" =====

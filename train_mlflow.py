@@ -1,5 +1,6 @@
 # ===== 1. Importer les bibliothèques =====
 import os
+import sys
 
 import pandas as pd
 import mlflow
@@ -13,6 +14,11 @@ from sklearn.metrics import (
     recall_score,
     f1_score
 )
+
+# Windows : éviter le crash d'affichage de l'emoji MLflow sur une console cp1252
+for flux in (sys.stdout, sys.stderr):
+    if hasattr(flux, "reconfigure"):
+        flux.reconfigure(errors="replace")
 
 
 # ===== 2. Charger les données =====

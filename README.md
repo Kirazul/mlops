@@ -1,45 +1,139 @@
-# MLOps - Churn Prediction
+# MLOps – Prédiction du churn client
 
-**Author:** Mohamed Aziz Mansour
+Projet MLOps du cours : modèle de classification qui prédit si un client va résilier son abonnement (churn), suivi des expériences avec MLflow, API FastAPI et déploiement conteneurisé avec Docker / Docker Compose.
 
-A small MLOps project for customer churn prediction. It generates a synthetic
-customer dataset, trains and evaluates a first classification model, and saves
-the trained model for later use.
+## Sommaire
 
-## Contents
+1. [Structure du dépôt](#structure-du-dépôt)
+2. [TP1 – Données et modèle](#tp1--données-et-modèle)
+3. [TP3 – Suivi des expériences MLflow](#tp3--suivi-des-expériences-mlflow)
+4. [TP4 – Registre de modèles et API FastAPI](#tp4--registre-de-modèles-et-api-fastapi)
+5. [TP5 – Docker et Docker Compose](#tp5--docker-et-docker-compose)
+6. [Branches](#branches)
 
-- `generate_data.py` - generates the synthetic churn dataset.
-- `churn_data.csv` - generated customer data.
-- `churn_model.ipynb` - notebook used to train and evaluate the first model.
-- `model.pkl` - saved trained model.
-- `train_mlflow.py` - trains three churn models and logs them as MLflow runs.
-- `lire_runs.py` - reads the MLflow runs and ranks them by F1 score.
-- `charger_modele.py` - reloads the best model from a run and makes a prediction.
-- `train_autolog.py` - bonus: logs a run automatically with MLflow autolog.
+## Structure du dépôt
 
-## MLflow experiment tracking
+| Fichier | Rôle |
+|---|---|
+| `generate_data.py` | Génère 500 clients fictifs dans `churn_data.csv` |
+| `churn_data.csv` | Jeu de données généré |
+| `churn_model.ipynb` | Exploration, entraînement et évaluation |
+| `model.pkl` | Modèle entraîné avec `joblib` |
+| `train_mlflow.py` | Entraîne 3 essais et les journalise dans MLflow |
+| `register_model.py` | Enregistre le meilleur run dans le registre et pose l'alias `champion` |
+| `load_champion.py` | Charge le champion depuis le registre et teste une prédiction |
+| `deplacer_alias.py` | Déplace / restaure l'alias `champion` |
+| `app.py` | API FastAPI (`/health`, `/predict`) |
+| `test_api.py` | Tests de l'API (Health, prédictions, validation) |
+| `enregistrer_modele.py` | Entraîne et enregistre le champion dans le registre (idempotent) |
+| `exporter_modele.py` | Exporte le champion dans `model/` pour l'image seule |
+| `Dockerfile` | Image de l'API churn |
+| `.dockerignore` | Fichiers exclus de l'image |
+| `requirements.txt` | Dépendances épinglées de l'image |
+| `docker-compose.yml` | Stack MLflow + initialisation + API |
 
-This branch adds experiment tracking with MLflow 3.17.1. All runs are grouped in
-the `churn-prediction` experiment.
+## TP1 – Données et modèle
 
-- Runs: `essai-1`, `essai-2`, `essai-3`, plus `essai-auto` from autolog.
-- Logged per run: parameters (`n_estimators`, `max_depth`, `features`), metrics
-  (accuracy, precision, recall, f1), and the trained model.
-- Results on the test set: `essai-1` and `essai-3` reach an F1 of 0.889, while
-  `essai-2` reaches 0.333.
+Chaque client est décrit par `age`, `salaire`, `abonnement`, `anciennete`, `consommation` et la cible `churn` (1 si `consommation < 30` et `anciennete < 2`).
 
-Run the experiments and open the MLflow UI (activate the virtual environment
-first):
+`RandomForestClassifier` (scikit-learn), découpage 80/20 (`random_state=42`).
+
+| Essai | Paramètres | Features | Accuracy |
+|---|---|---|---|
+| 1 | 100 arbres, `max_depth=5` | 5 | 0.99 |
+| 2 | 50 arbres, `max_depth=3` | 5 | 0.99 |
+| 3 | 100 arbres, `max_depth=5` | 4 (sans `salaire`) | 1.00 |
+
+## TP3 – Suivi des expériences MLflow
 
 ```powershell
-python train_mlflow.py
-mlflow ui
+python train_mlflow.py     # crée l'expérience churn-prediction et les 3 runs
+mlflow ui                  # interface sur http://localhost:5000
 ```
 
-Then open http://127.0.0.1:5000 and select the `churn-prediction` experiment.
-`mlruns/` and `mlflow.db` stay local and are ignored by Git; the scripts can be
-re-run at any time to reproduce the runs.
+Chaque run journalise les paramètres, les métriques (`accuracy`, `precision`, `recall`, `f1`) et le modèle.
 
-## MLflow interface
+## TP4 – Registre de modèles et API FastAPI
 
-![MLflow interface](interface.png)
+```powershell
+python register_model.py   # meilleur run par f1 -> churn-model, alias champion
+python load_champion.py    # vérifie le chargement du champion
+uvicorn app:app --host 0.0.0.0 --port 8000
+python test_api.py         # GET /health + POST /predict
+```
+
+L'API lit `MLFLOW_TRACKING_URI` (défaut `sqlite:///mlflow.db`) et `MODEL_URI` (défaut `model`).
+
+## TP5 – Docker et Docker Compose
+
+### Prérequis
+
+- Docker Desktop démarré (`docker --version`, `docker info`)
+
+### Image seule
+
+L'image ne contient pas le modèle : on le monte depuis `model/` (ou on pointe vers un registre accessible).
+
+```powershell
+python exporter_modele.py                  # exporte le champion dans model/
+docker build -t churn-api:1.0 .
+docker run -d -p 8000:8000 --name api `
+  -e MODEL_URI=model `
+  -v "${PWD}/model:/app/model:ro" `
+  churn-api:1.0
+curl.exe http://localhost:8000/health
+python test_api.py
+docker logs api
+docker stop api
+docker rm api
+```
+
+### Docker Compose (MLflow + API)
+
+`docker compose up` lance trois services : `mlflow`, `trainer` (entraîne et enregistre le champion s'il n'existe pas) puis `api`.
+
+```powershell
+docker compose up -d --build
+docker compose ps
+curl.exe http://localhost:8000/health
+python test_api.py
+docker compose logs -f api
+```
+
+Forcer un nouvel entraînement (nouvelle version du champion) :
+
+```powershell
+$env:FORCE_RETRAIN="1"
+docker compose up --build
+Remove-Item Env:FORCE_RETRAIN
+```
+
+Le `trainer` est idempotent : si l'alias `champion` existe déjà, il s'arrête immédiatement sans réentraîner.
+
+Arrêt :
+
+```powershell
+docker compose stop        # arrête sans supprimer
+docker compose down        # supprime conteneurs et réseau (volume conservé)
+docker compose down -v     # supprime aussi le volume mlflow-data
+```
+
+Architecture :
+
+```
+Navigateur / test_api.py
+        |  :8000
+        v
+      api  ──(http://mlflow:5000)──>  mlflow  ──> volume mlflow-data
+ (modèle champion)      ^            (registre + artefacts)
+                        |
+                    trainer (premier lancement)
+```
+
+Les fichiers locaux `mlflow.db`, `mlruns/` et `model/` sont ignorés par Git : le registre de Compose vit dans le volume `mlflow-data` et se recrée tout seul.
+
+## Branches
+
+- `master` : version stable
+- `develop` : intégration
+- `feature/*` : développement des nouvelles fonctionnalités

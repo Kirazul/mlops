@@ -1,10 +1,14 @@
 
+import os
+
 import mlflow
 import mlflow.sklearn
 import pandas as pd
 
 # ===== 1. Connexion à la base MLflow =====
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+mlflow.set_tracking_uri(
+    os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+)
 
 # ===== 2. Charger le modèle champion =====
 model_uri = "models:/churn-model@champion"

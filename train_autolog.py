@@ -1,7 +1,14 @@
+import sys
+
 import pandas as pd
 import mlflow
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+
+# Windows : éviter le crash d'affichage de l'emoji MLflow sur une console cp1252
+for flux in (sys.stdout, sys.stderr):
+    if hasattr(flux, "reconfigure"):
+        flux.reconfigure(errors="replace")
 
 df = pd.read_csv("churn_data.csv")
 X = pd.get_dummies(df[["age", "salaire", "abonnement", "anciennete", "consommation"]],

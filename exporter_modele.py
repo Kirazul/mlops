@@ -1,29 +1,16 @@
 # ===== 1. Importer les bibliothèques =====
-import os
-import shutil
+import mlflow                         # le module principal de MLflow
+import mlflow.sklearn                 # les fonctions dédiées à scikit-learn
 
-import mlflow
-import mlflow.sklearn
+# ===== 2. Se connecter à la base du Registry (celle du TP4) =====
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
-# ===== 2. Configuration (Docker Compose ou poste local) =====
-TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
-MODEL_NAME = os.getenv("MODEL_NAME", "churn-model")
-ALIAS = os.getenv("MODEL_ALIAS", "champion")
-DESTINATION = os.getenv("MODEL_DIR", "model")
+# ===== 3. Charger le champion depuis le Registry =====
+model = mlflow.sklearn.load_model("models:/churn-model@champion")
 
-# ===== 3. Charger le champion depuis le registre =====
-mlflow.set_tracking_uri(TRACKING_URI)
-model = mlflow.sklearn.load_model(f"models:/{MODEL_NAME}@{ALIAS}")
-
-# ===== 4. Remplacer l'ancien dossier d'export =====
-if os.path.exists(DESTINATION):
-    shutil.rmtree(DESTINATION)
-
-# ===== 5. Exporter le modèle pour un usage hors registre =====
-mlflow.sklearn.save_model(
-    model,
-    DESTINATION,
-    serialization_format="cloudpickle",
-)
-
-print(f"Champion {MODEL_NAME}@{ALIAS} exporté dans {DESTINATION}/")
+# ===== 4. L'écrire dans un dossier ordinaire, « model » =====
+# serialization_format="cloudpickle" : même format qu'aux TP3 et TP4
+# (le format par défaut de MLflow 3 est refusé au chargement).
+# Ce dossier sera copié dans l'image Docker : l'image n'aura plus besoin du Registry.
+mlflow.sklearn.save_model(model, "model", serialization_format="cloudpickle")
+print("Champion exporté dans le dossier model/")

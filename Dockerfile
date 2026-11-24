@@ -1,24 +1,26 @@
+# 1. Image de base : un Linux minimal avec Python 3.11 déjà installé
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
+# 2. Dossier de travail dans l'image (créé s'il n'existe pas)
 WORKDIR /app
 
-# Couche de dépendances mise en cache
+# 3. Copier d'abord SEULEMENT la liste des bibliothèques, puis les installer.
+#    Cette couche est mise en cache : tant que requirements.txt ne change pas,
+#    Docker ne refait pas l'installation (gain de plusieurs minutes).
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-# Code de l'API + scripts utilisés par le service d'initialisation Compose
-COPY app.py enregistrer_modele.py exporter_modele.py churn_data.csv ./
+# 4. Copier ensuite le code et le modèle (ils changent plus souvent)
+COPY app.py .
+COPY model/ model/
 
-# Par défaut : champion du registre MLflow (surchargé par Compose)
-ENV MODEL_URI=models:/churn-model@champion
+# 5. Valeur par défaut : charger le modèle depuis le dossier model
+ENV MODEL_URI=model
 
+# 6. Documenter le port utilisé par l'API (information, ne publie rien)
 EXPOSE 8000
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
-
+# 7. Commande lancée au démarrage du conteneur.
+#    --host 0.0.0.0 : écouter sur toutes les adresses du conteneur
+#    (avec 127.0.0.1, l'API serait injoignable depuis l'extérieur)
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
